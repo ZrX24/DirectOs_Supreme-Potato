@@ -187,6 +187,6 @@ The `edit` command appends lines to a file; enter a single `.` on its own line t
 - **QEMU cannot find `bios-256k.bin`:** pass QEMU's firmware directory with `-L`; for portable Windows QEMU, an ASCII-only copy of the `share` folder avoids path-encoding issues.
 - **`Disk read error`:** confirm you built the latest boot sector into the image and are booting the `.img` as IDE or the `.iso` as a CD/DVD. The bootloader has an EDD read with CHS fallback for floppy emulation.
 - **Kernel-size error:** the bootloader can load at most 127 sectors; reduce kernel size before increasing the limit, since the boot-sector load strategy and memory layout must also change.
-- **No network IP in `fastfetch`:** expected; no NIC driver or network stack is implemented.
+- **No network IP in `fastfetch`:** expected; no NIC driver or network stack is implemented. (Im too stupid for that.)
 
 PD: It may has a lot of errors as im a lil bit of a certified retard myself, you can report them to me, and probably wont be able to fix it, or youcan fix it yourself, and prove you are better than me, wich you are either way.
