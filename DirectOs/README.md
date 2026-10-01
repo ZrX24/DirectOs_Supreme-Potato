@@ -171,8 +171,8 @@ At the prompt, run `help` for the command index and `man COMMAND` for a summary.
 ```text
 help
 fastfetch
-useradd joan
-login joan
+useradd User
+login User
 whoami
 su root
 ```
@@ -188,3 +188,5 @@ The `edit` command appends lines to a file; enter a single `.` on its own line t
 - **`Disk read error`:** confirm you built the latest boot sector into the image and are booting the `.img` as IDE or the `.iso` as a CD/DVD. The bootloader has an EDD read with CHS fallback for floppy emulation.
 - **Kernel-size error:** the bootloader can load at most 127 sectors; reduce kernel size before increasing the limit, since the boot-sector load strategy and memory layout must also change.
 - **No network IP in `fastfetch`:** expected; no NIC driver or network stack is implemented.
+
+PD: It may has a lot of errors as im a lil bit of a certified retard myself, you can report them to me, and probably wont be able to fix it, or youcan fix it yourself, and prove you are better than me, wich you are either way.
