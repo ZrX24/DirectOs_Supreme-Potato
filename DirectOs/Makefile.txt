@@ -6,7 +6,7 @@ PYTHON = python3
 ISO = genisoimage
 CFLAGS = -m32 -std=gnu99 -ffreestanding -fno-pie -fno-pic -fno-stack-protector -fno-builtin -Wall -Wextra -O2 -I.
 BUILD = build
-OBJECTS = $(BUILD)/kernel_entry.o $(BUILD)/kernel.o $(BUILD)/screen.o $(BUILD)/keyboard.o $(BUILD)/fs.o $(BUILD)/timer.o
+OBJECTS = $(BUILD)/kernel_entry.o $(BUILD)/kernel.o $(BUILD)/screen.o $(BUILD)/keyboard.o $(BUILD)/fs.o $(BUILD)/timer.o $(BUILD)/rtl8139.o $(BUILD)/e1000.o $(BUILD)/network.o
 
 .PHONY: all clean
 

@@ -1,5 +1,6 @@
 #include "fs.h"
 #include "keyboard.h"
+#include "network.h"
 #include "screen.h"
 #include "timer.h"
 
@@ -7,6 +8,11 @@
 #define ARG_MAX 12
 #define USER_MAX 8
 #define ALIAS_MAX 8
+#define CMOS_VERBOSE_MAGIC_REG 0x38
+#define CMOS_VERBOSE_VALUE_REG 0x39
+#define CMOS_VERBOSE_CHECK_REG 0x3A
+#define CMOS_VERBOSE_MAGIC 0xD6
+#define CMOS_VERBOSE_SALT 0xA5
 
 typedef struct {
 	char name[16];
@@ -32,6 +38,17 @@ static unsigned int user_count = 1;
 static unsigned int current_user;
 static Alias aliases[ALIAS_MAX];
 static unsigned int alias_count;
+static unsigned char verbose_enabled;
+
+static void boot_status(const char *state, const char *message)
+{
+	if (!verbose_enabled) return;
+	screen_write("[");
+	screen_write(state);
+	screen_write("] ");
+	screen_write(message);
+	screen_putchar('\n');
+}
 
 static unsigned char port_in(unsigned short port)
 {
@@ -224,6 +241,43 @@ static unsigned int parse_unsigned(const char *text, unsigned int base)
 	return value;
 }
 
+static int parse_ipv4_address(const char *text, unsigned char address[4])
+{
+	unsigned int part;
+	for (part = 0; part < 4; part++) {
+		unsigned int value = 0;
+		if (*text < '0' || *text > '9') return 0;
+		while (*text >= '0' && *text <= '9') {
+			unsigned int digit = (unsigned int)(*text - '0');
+			if (value > (255U - digit) / 10U) return 0;
+			value = value * 10 + digit;
+			text++;
+		}
+		address[part] = (unsigned char)value;
+		if (part < 3) {
+			if (*text != '.') return 0;
+			text++;
+		}
+	}
+	return *text == 0;
+}
+
+static int parse_ping_size(const char *text, unsigned short *size)
+{
+	unsigned int value = 0;
+	if (!*text) return 0;
+	while (*text) {
+		unsigned int digit;
+		if (*text < '0' || *text > '9') return 0;
+		digit = (unsigned int)(*text - '0');
+		if (value > (1472U - digit) / 10U) return 0;
+		value = value * 10 + digit;
+		text++;
+	}
+	*size = (unsigned short)value;
+	return 1;
+}
+
 static unsigned int rtc_value(unsigned char value, int binary)
 {
 	if (binary) return value;
@@ -240,6 +294,24 @@ static void rtc_write(unsigned char reg, unsigned char value)
 {
 	port_out(0x70, reg);
 	port_out(0x71, value);
+}
+
+static unsigned char verbose_load(void)
+{
+	unsigned char enabled;
+	if (rtc_read(CMOS_VERBOSE_MAGIC_REG) != CMOS_VERBOSE_MAGIC) return 0;
+	enabled = rtc_read(CMOS_VERBOSE_VALUE_REG);
+	if (enabled > 1 || rtc_read(CMOS_VERBOSE_CHECK_REG) != (unsigned char)(CMOS_VERBOSE_MAGIC ^ enabled ^ CMOS_VERBOSE_SALT)) return 0;
+	return enabled;
+}
+
+static int verbose_save(unsigned char enabled)
+{
+	rtc_write(CMOS_VERBOSE_MAGIC_REG, 0);
+	rtc_write(CMOS_VERBOSE_VALUE_REG, enabled);
+	rtc_write(CMOS_VERBOSE_CHECK_REG, (unsigned char)(CMOS_VERBOSE_MAGIC ^ enabled ^ CMOS_VERBOSE_SALT));
+	rtc_write(CMOS_VERBOSE_MAGIC_REG, CMOS_VERBOSE_MAGIC);
+	return verbose_load() == enabled;
 }
 
 static unsigned char rtc_encode(unsigned int value, int binary)
@@ -603,10 +675,10 @@ static void command_calendar(void)
 
 static void command_help(void)
 {
-	screen_write_color(" DIRECTOS BETA 0.1  |  DIRECT0.1SO (Supreme-Potato)  |  COMMAND INDEX\n", 0x0B);
+	screen_write_color(" DIRECTOS 0.2  |  EVEN BETTER POTATO  |  COMMAND INDEX\n", 0x0B);
 	screen_write_color(" FILES  ", 0x0E); screen_write("ls dir cd pwd mkdir rmdir touch rm del cp mv cat type stat chmod\n");
 	screen_write_color(" TEXT   ", 0x0E); screen_write("echo less more edit nano grep head tail wc hexedit clear cls\n");
-	screen_write_color(" SYSTEM ", 0x0E); screen_write("version uname fastfetch date time cal uptime top free mem ps\n");
+	screen_write_color(" SYSTEM ", 0x0E); screen_write("version uname fastfetch date time cal uptime top free mem ps verbose\n");
 	screen_write_color(" STORAGE", 0x0E); screen_write("df du format mount chkdsk fsck\n");
 	screen_write_color(" USERS  ", 0x0E); screen_write("login whoami useradd passwd su sudo\n");
 	screen_write_color(" NETWORK", 0x0E); screen_write("ping ifconfig ip ssh\n");
@@ -641,9 +713,9 @@ static void command_fastfetch(void)
 	fastfetch_prefix("      |:_/ |      ", "CPU");
 	screen_write(cpu_brand); screen_putchar('\n');
 	fastfetch_prefix("     //   \\\\     ", "Version");
-	screen_write("DirectOS Beta 0.1\n");
+	screen_write("DirectOs 0.2\n");
 	fastfetch_prefix("    (|     | )    ", "Codename");
-	screen_write("Direct0.1So\n");
+	screen_write("Even Better Potato\n");
 	fastfetch_prefix("     `-.__.-'     ", "RAM");
 	if (ram_mib) { print_unsigned(ram_mib); screen_write(" MiB usable (BIOS E820)\n"); }
 	else screen_write("unavailable (BIOS memory map not provided)\n");
@@ -682,8 +754,9 @@ static void command_man(const char *name)
 		{ "top", "top - show a one-shot kernel status snapshot" }, { "uptime", "uptime - show PIT-based elapsed time" },
 		{ "date", "date [YYYY-MM-DD] - read or set the RTC date" }, { "time", "time [HH:MM:SS] - read or set the RTC time" },
 		{ "cal", "cal - print the RTC month's calendar" }, { "sleep", "sleep SECONDS - wait using PIT polling" },
-		{ "ping", "ping HOST - unavailable without a NIC and network stack" }, { "ifconfig", "ifconfig - report network driver status" },
-		{ "ssh", "ssh - joke response; no SSH client or network stack is installed" },
+		{ "verbose", "verbose [on|off] - toggle boot/network status messages; saves to virtual CMOS" },
+		{ "ping", "ping IPv4 [BYTES] - send one ICMP echo; payload defaults to 56 bytes (max 1472)" }, { "ifconfig", "ifconfig - report network interface and static IPv4 configuration" },
+		{ "ssh", "ssh HOST - unavailable; TCP and the SSH protocol are not implemented" },
 		{ "man", "man COMMAND - show a command summary" }, { "fastfetch", "fastfetch - show kernel-visible system information" }
 	};
 	unsigned int i;
@@ -706,7 +779,7 @@ static void dispatch(char **args, int count)
 
 	if (str_equal(command, "help")) command_help();
 	else if (str_equal(command, "clear") || str_equal(command, "cls")) screen_clear();
-	else if (str_equal(command, "version") || str_equal(command, "ver")) screen_write("DirectOS Beta 0.1 (Direct0.1So)\n");
+	else if (str_equal(command, "version") || str_equal(command, "ver")) screen_write("DirectOs 0.2 (codename: Even Better Potato)\n");
 	else if (str_equal(command, "uname")) screen_write("DirectOS i386 32-bit Protected Mode\n");
 	else if (str_equal(command, "pwd")) { char path[FS_PATH_MAX]; fs_get_cwd(path, sizeof(path)); screen_write(path); screen_putchar('\n'); }
 	else if (str_equal(command, "ls") || str_equal(command, "dir")) command_ls(count > 1 ? args[1] : ".");
@@ -942,7 +1015,27 @@ static void dispatch(char **args, int count)
 		if (seconds > 3600) command_error("maximum sleep is 3600 seconds");
 		else while ((unsigned int)(timer_seconds() - start) < seconds) timer_poll();
 	}
+	else if (str_equal(command, "verbose")) {
+		unsigned char desired;
+		if (count == 1) {
+			boot_status("OK", verbose_enabled ? "verbose mode is enabled and persistent" : "verbose mode is disabled");
+			if (!verbose_enabled) screen_write("Verbose mode is disabled. Use verbose on to enable it.\n");
+		} else if (count != 2 || (!str_equal(args[1], "on") && !str_equal(args[1], "off")))
+			screen_write("Usage: verbose [on|off]\n");
+		else {
+			desired = str_equal(args[1], "on") ? 1 : 0;
+			if (!verbose_save(desired)) screen_write("[Failed] unable to save verbose setting to virtual CMOS\n");
+			else {
+				verbose_enabled = desired;
+				network_set_verbose(verbose_enabled);
+				if (verbose_enabled) boot_status("OK", "verbose mode enabled and saved persistently");
+				else screen_write("[OK] verbose mode disabled and saved persistently\n");
+			}
+		}
+	}
 	else if (str_equal(command, "shutdown")) {
+		boot_status("Waiting", "sending virtual ACPI poweroff request");
+		boot_status("STOPPED", "kernel halted for poweroff");
 		screen_write("Powering off (emulator ACPI request)...\n");
 		port_out_word(0x604, 0x2000);
 		port_out_word(0xB004, 0x2000);
@@ -951,15 +1044,54 @@ static void dispatch(char **args, int count)
 	}
 	else if (str_equal(command, "reboot")) {
 		unsigned int wait;
+		boot_status("Waiting", "requesting keyboard-controller reset");
 		screen_write("Rebooting...\n");
 		__asm__ volatile ("cli");
 		for (wait = 0; wait < 100000; wait++) if (!(port_in(0x64) & 2)) break;
 		port_out(0x64, 0xFE);
+		boot_status("STOPPED", "CPU halted while waiting for reset");
 		for (;;) __asm__ volatile ("hlt");
 	}
-	else if (str_equal(command, "ssh")) screen_write("Shhhhh... the server is sleeping. SSH is not implemented. Shhh...\n");
-	else if (str_equal(command, "ping")) screen_write("Network stack and NIC driver are not installed.\n");
-	else if (str_equal(command, "ifconfig") || str_equal(command, "ip")) screen_write("No PCI network interface driver is installed.\n");
+	else if (str_equal(command, "ssh")) screen_write("SSH client not implemented; TCP and cryptography are not available yet.\n");
+	else if (str_equal(command, "ping")) {
+		unsigned char address[4];
+		unsigned short payload_size = 56;
+		unsigned int elapsed_ms = 0;
+		int result;
+		if ((count != 2 && count != 3) || !parse_ipv4_address(args[1], address) ||
+			(count == 3 && !parse_ping_size(args[2], &payload_size)))
+			screen_write("Usage: ping IPv4 [PAYLOAD_BYTES] (0-1472)\n");
+		else {
+			screen_write("PING ");
+			print_unsigned(address[0]); screen_putchar('.'); print_unsigned(address[1]); screen_putchar('.');
+			print_unsigned(address[2]); screen_putchar('.'); print_unsigned(address[3]); screen_write(" ... ");
+			result = network_ping(address, payload_size, &elapsed_ms);
+			if (result < 0) screen_write("no supported Ethernet adapter detected\n");
+			else if (!result) screen_write("request timed out\n");
+			else {
+				screen_write("reply, bytes=");
+				print_unsigned(payload_size);
+				screen_write(" time=");
+				print_unsigned(elapsed_ms);
+				screen_write(" ms\n");
+			}
+		}
+	}
+	else if (str_equal(command, "ifconfig") || str_equal(command, "ip")) {
+		unsigned char mac[6];
+		unsigned int i;
+		if (!network_init()) screen_write("No supported RTL8139 or Intel PRO/1000 adapter detected.\n");
+		else {
+			network_get_mac(mac);
+			screen_write(network_driver_name());
+			screen_write(": driver ready\ninet 10.0.2.15 netmask 255.255.255.0 gateway 10.0.2.2\nMAC: ");
+			for (i = 0; i < 6; i++) {
+				print_hex_byte(mac[i]);
+				if (i != 5) screen_putchar(':');
+			}
+			screen_putchar('\n');
+		}
+	}
 	else if (str_equal(command, "fastfetch")) command_fastfetch();
 	else if (str_equal(command, "man")) {
 		if (count < 2) screen_write("Usage: man COMMAND. See help for the command list.\n");
@@ -973,11 +1105,19 @@ void kernel_main(void)
 	char line[INPUT_SIZE];
 	char path[FS_PATH_MAX];
 	char *arguments[ARG_MAX];
+	verbose_enabled = verbose_load();
+	network_set_verbose(verbose_enabled);
 	screen_init();
+	boot_status("OK", "VGA text console initialized");
+	if (verbose_enabled) boot_status("OK", "persistent verbose setting restored from CMOS");
 	timer_init();
+	boot_status("OK", "PIT timer initialized at approximately 1 kHz");
 	fs_init();
-	screen_write_color("DirectOS Beta 0.1\n", 0x0B);
-	screen_write("Codename Direct0.1So | Type help for commands.\n");
+	boot_status("OK", "RAM filesystem initialized");
+	if (!network_init()) boot_status("Failed", "network unavailable; shell will continue");
+	else boot_status("OK", "network interface initialized");
+	screen_write_color("DirectOs 0.2\n", 0x0B);
+	screen_write("Codename: Even Better Potato | Type help for commands.\n");
 	for (;;) {
 		fs_get_cwd(path, sizeof(path));
 		screen_write_color(users[current_user].name, 0x0A);

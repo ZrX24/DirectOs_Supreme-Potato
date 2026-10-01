@@ -1,6 +1,6 @@
 #include "timer.h"
 
-#define PIT_RELOAD 11932U
+#define PIT_RELOAD 1193U
 
 static volatile unsigned int ticks;
 static unsigned short previous_count;
@@ -51,5 +51,5 @@ unsigned int timer_ticks(void)
 
 unsigned int timer_seconds(void)
 {
-    return timer_ticks() / 100;
+    return timer_ticks() / 1000;
 }

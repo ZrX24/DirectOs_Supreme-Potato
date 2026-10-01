@@ -11,8 +11,9 @@ The build produces a raw 1.44 MB disk image. An optional El Torito ISO wraps tha
 - Shell with grouped `help`, command summaries via `man`, and RAM filesystem operations.
 - Volatile account switching with `login` and `su`; password entry is masked.
 - `fastfetch` reports CPUID CPU branding, PCI display/Ethernet IDs, BIOS-usable RAM, the current user, and RTC date/time.
+- Polling RTL8139 and Intel PRO/1000 Ethernet with static IPv4, ARP, and configurable one-shot ICMP `ping`.
 
-DirectOS has no disk-storage driver, network stack/NIC driver, graphics acceleration, process isolation, scheduler, or heap allocator. `fastfetch` can identify PCI devices but cannot provide an IP address or a friendly GPU name. Accounts and passwords are in-memory shell metadata, not a security boundary; passwords are stored as plain text in RAM. `free`, `df`, and `du` describe RAMFS capacity, not physical memory or disk space.
+DirectOS has no disk-storage driver, DHCP, DNS, TCP, SSH, Wi-Fi device driver, graphics acceleration, process isolation, scheduler, or heap allocator. Networking uses a static IPv4 setup through RTL8139 or Intel PRO/1000 Ethernet adapters; in VirtualBox, the host's Wi-Fi or wired connection is shared through NAT and does not require a guest Wi-Fi driver. `fastfetch` can identify PCI devices but does not report network configuration or a friendly GPU name. Accounts and passwords are in-memory shell metadata, not a security boundary; passwords are stored as plain text in RAM. `free`, `df`, and `du` describe RAMFS capacity, not physical memory or disk space.
 
 ## Build Prerequisites
 
@@ -107,13 +108,14 @@ IDE is the recommended test path for the raw image:
 
 ```sh
 qemu-system-i386 -m 64M \
+	-nic user,model=rtl8139 \
 	-drive file=build/directos.img,format=raw,if=ide
 ```
 
 ### Boot the ISO
 
 ```sh
-qemu-system-i386 -m 64M -boot order=d \
+qemu-system-i386 -m 64M -nic user,model=rtl8139 -boot order=d \
 	-cdrom build/directos.iso
 ```
 
@@ -125,13 +127,13 @@ In PowerShell, adjust the QEMU folder if yours is elsewhere. If the portable pac
 Set-Location 'C:\Path\To\qemu-portable'
 New-Item -ItemType Directory -Force 'C:\Users\Public\qemu-share' | Out-Null
 Copy-Item '.\share\*' 'C:\Users\Public\qemu-share' -Recurse -Force
-.\qemu-system-i386.exe -L 'C:\Users\Public\qemu-share' -m 64M -boot order=d -cdrom 'C:\Users\Public\directos.iso' -display sdl
+.\qemu-system-i386.exe -L 'C:\Users\Public\qemu-share' -m 64M -nic user,model=rtl8139 -boot order=d -cdrom 'C:\Users\Public\directos.iso' -display sdl
 ```
 
 For the raw image, replace `-boot order=d -cdrom ...` with:
 
 ```powershell
-.\qemu-system-i386.exe -L 'C:\Users\Public\qemu-share' -m 64M -drive "file=C:\Users\Public\directos.img,format=raw,if=ide" -display sdl
+.\qemu-system-i386.exe -L 'C:\Users\Public\qemu-share' -m 64M -nic user,model=rtl8139 -drive "file=C:\Users\Public\directos.img,format=raw,if=ide" -display sdl
 ```
 
 ### Headless Linux server
@@ -140,6 +142,7 @@ Run QEMU with a VNC display bound to localhost:
 
 ```sh
 qemu-system-i386 -m 64M -boot order=d \
+	-nic user,model=rtl8139 \
 	-cdrom build/directos.iso \
 	-display vnc=127.0.0.1:1
 ```
@@ -151,6 +154,14 @@ ssh -L 5901:127.0.0.1:5901 USER@SERVER
 ```
 
 Replace `USER@SERVER` with your Ubuntu account and server address. The SSH command only tunnels the VNC connection; it does not add SSH support to DirectOS.
+
+### Network commands
+
+For Oracle VirtualBox, set Adapter 1 to **NAT**, enable **Cable Connected**, and choose **Intel PRO/1000 MT Desktop (82540EM)** as the adapter type. The guest uses the VirtualBox NAT defaults `10.0.2.15/24` with gateway `10.0.2.2`; this works whether the host is connected over Wi-Fi or wired Ethernet. `ifconfig` shows the detected driver and MAC address.
+
+`ping IPv4 [PAYLOAD_BYTES]` sends one ICMP echo request; the payload defaults to 56 bytes and can be set from 0 to 1472 bytes. For example, try `ping 10.0.2.2 56`, `ping 8.8.8.8 56`, or `ping 1.1.1.1 1200`. The reported RTT is in milliseconds at approximately 1 ms timer resolution. Destinations must be numeric IPv4 addresses; DHCP, DNS, TCP, and SSH are not implemented.
+
+Use `verbose on` to enable boot and network status messages, and `verbose off` to disable them. The setting is stored with a magic value and checksum in VirtualBox CMOS bytes `0x38`-`0x3A`, so it should survive VM reboot and poweroff while the VM configuration is retained. This firmware-specific storage is not portable to arbitrary physical BIOSes. Verbose ping output identifies adapter detection, ARP resolution, NIC transmit, and echo-reply timeout stages.
 
 ## Boot on a Physical PC
 
@@ -171,8 +182,8 @@ At the prompt, run `help` for the command index and `man COMMAND` for a summary.
 ```text
 help
 fastfetch
-useradd User
-login User
+useradd USER
+login USER
 whoami
 su root
 ```
@@ -187,6 +198,4 @@ The `edit` command appends lines to a file; enter a single `.` on its own line t
 - **QEMU cannot find `bios-256k.bin`:** pass QEMU's firmware directory with `-L`; for portable Windows QEMU, an ASCII-only copy of the `share` folder avoids path-encoding issues.
 - **`Disk read error`:** confirm you built the latest boot sector into the image and are booting the `.img` as IDE or the `.iso` as a CD/DVD. The bootloader has an EDD read with CHS fallback for floppy emulation.
 - **Kernel-size error:** the bootloader can load at most 127 sectors; reduce kernel size before increasing the limit, since the boot-sector load strategy and memory layout must also change.
-- **No network IP in `fastfetch`:** expected; no NIC driver or network stack is implemented. (Im too stupid for that.)
-
-PD: It may has a lot of errors as im a lil bit of a certified retard myself, you can report them to me, and probably wont be able to fix it, or youcan fix it yourself, and prove you are better than me, wich you are either way.
+- **No network IP in `fastfetch`:** expected; use `ifconfig` to inspect the current static configuration.
