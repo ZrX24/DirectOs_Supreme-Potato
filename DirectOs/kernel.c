@@ -676,13 +676,13 @@ static void command_calendar(void)
 static void command_help(void)
 {
 	screen_write_color(" DIRECTOS 0.2  |  EVEN BETTER POTATO  |  COMMAND INDEX\n", 0x0B);
-	screen_write_color(" FILES  ", 0x0E); screen_write("ls dir cd pwd mkdir rmdir touch rm del cp mv cat type stat chmod\n");
-	screen_write_color(" TEXT   ", 0x0E); screen_write("echo less more edit nano grep head tail wc hexedit clear cls\n");
-	screen_write_color(" SYSTEM ", 0x0E); screen_write("version uname fastfetch date time cal uptime top free mem ps verbose\n");
-	screen_write_color(" STORAGE", 0x0E); screen_write("df du format mount chkdsk fsck\n");
-	screen_write_color(" USERS  ", 0x0E); screen_write("login whoami useradd passwd su sudo\n");
-	screen_write_color(" NETWORK", 0x0E); screen_write("ping ifconfig ip ssh\n");
-	screen_write_color(" TOOLS  ", 0x0E); screen_write("sleep history alias man reboot shutdown\n");
+	screen_write_color(" FILES  ", 0x0E); screen_write(" - ls, dir, cd, pwd, mkdir, rmdir, touch, rm, del, cp, mv, cat, type, stat, chmod\n");
+	screen_write_color(" TEXT   ", 0x0E); screen_write(" - echo, less, more, edit, nano, grep, head, tail, wc, hexedit, clear, cls\n");
+	screen_write_color(" SYSTEM ", 0x0E); screen_write(" - version, uname, fastfetch, date, time, cal, uptime, top, free, mem, ps, verbose\n");
+	screen_write_color(" STORAGE", 0x0E); screen_write(" - df, du, format, mount, chkdsk, fsck\n");
+	screen_write_color(" USERS  ", 0x0E); screen_write(" - login, whoami, useradd, passwd, su, sudo\n");
+	screen_write_color(" NETWORK", 0x0E); screen_write(" - ping, ifconfig, ip, ssh\n");
+	screen_write_color(" TOOLS  ", 0x0E); screen_write(" - sleep, history, alias, man, reboot, shutdown\n");
 	screen_write("Use man COMMAND for syntax. Accounts and passwords reset on reboot.\n");
 }
 
